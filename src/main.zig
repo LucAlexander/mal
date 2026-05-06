@@ -133,7 +133,7 @@ pub fn get_contents(mem: *const std.mem.Allocator, filename: []const u8) ![]u8 {
 const Node = union(enum){
 	variable: struct{
 		name: Token,
-		value: *Node
+		value: Expression
 	},
 	function: struct{
 		name: Tokem,
@@ -155,6 +155,7 @@ const Statement = union(enum){
 		range: Expression,
 		consequent: *Block
 	},
+	definition: *Node,
 	asm_statement: *Block,
 	assignment_statement: struct{
 		name: Token,
@@ -185,9 +186,72 @@ pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(N
 		if (i >= tokens.len){
 			return ParseError.UnexpectedEOF;
 		}
-
+		const arg = tokens[i];
+		if (arg.tag == TOKEN_EQ){
+			i += 1;
+			if (i > tokens.len){
+				return ParseError.UnexpectedEOF;
+			}
+			const expression = try parse_expression(mem, &i, tokens);
+			definitions.append(Node{
+				.variable = .{
+					.name = name,
+					.value = expression
+				}
+			}) catch unreachable;
+		}
+		else if (arg.tag == TOKEN_IDEN or arg.tag == TOKEN_OPEN_BLOCK){
+			i -= 1;
+			const definition = try parse_definition(mem, &i, tokens);
+			definitions.append(definition) catch unreachable;
+		}
 	}
 	return definitions;
+}
+
+pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!*Node {
+	const name = tokens[i.*];
+	i.* += 1;
+	if (name.tag != TOKEN_IDEN){
+		return ParseError.UnexpectedToken;
+	}
+	if (i.* >= tokens.len){
+		return ParseError.UnexpectedEOF;
+	}
+	var args = Buffer(Token).init(mem.*)
+	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_OPEN_BLOCK){
+		if (tokens[i.*].tag == TOKEN_IDEN){
+			args.append(tokens[i.*]) catch unreachable;
+			i.* += 1;
+			continue;
+		}
+		return ParseError.UnexpectedToken;
+	}
+	if (i.* >= tokens.len){
+		return ParseError.UnexpectedEOF;
+	}
+	const block = try parse_block(mem, i, tokens);
+	const node = mem.create(Node) catch unreachable;
+	node.* = Node{
+		.function = .{
+			.name = name,
+			.args = args,
+			.value = block
+		}
+	};
+	return node;
+}
+
+pub fn parse_block(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Block {
+	//TODO
+}
+
+pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Statement {
+	//TODO
+}
+
+pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Expression {
+	//TODO
 }
 
 pub fn main() anyerror!void {
