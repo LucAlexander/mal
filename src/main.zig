@@ -30,6 +30,7 @@ const TOKEN_LE = 6;
 const TOKEN_GE = 7;
 const TOKEN_ASM = 8;
 const TOKEN_ELSE = 9;
+const TOKEN_IMPORT = 10;
 
 const Token = struct {
 	text: []const u8,
@@ -46,6 +47,7 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 	idenmap.put(">=", TOKEN_GE ) catch unreachable;
 	idenmap.put("asm", TOKEN_ASM ) catch unreachable;
 	idenmap.put("else", TOKEN_ELSE ) catch unreachable;
+	idenmap.put("import", TOKEN_IMPORT ) catch unreachable;
 	var tokens = Buffer(Token).init(mem.*);
 	var i: u64 = 0;
 	while (i < text.len){
@@ -128,6 +130,66 @@ pub fn get_contents(mem: *const std.mem.Allocator, filename: []const u8) ![]u8 {
 	return contents;
 }
 
+const Node = union(enum){
+	variable: struct{
+		name: Token,
+		value: *Node
+	},
+	function: struct{
+		name: Tokem,
+		args: Buffer(Token),
+		value: Block
+	}
+};
+
+const Block = Buffer(Statement);
+
+const Statement = union(enum){
+	if_statement: struct {
+		condition: Expression,
+		consequent: *Block,
+		alternate: ?*Block
+	},
+	for_statement: struct {
+		variable: Token,
+		range: Expression,
+		consequent: *Block
+	},
+	asm_statement: *Block,
+	assignment_statement: struct{
+		name: Token,
+		value: Expression
+	}
+};
+
+const Expression = union(enum){
+	composition: Buffer(*Expression),
+	quote: *Expression,
+	atom: Token
+};
+
+const ParseError = error{
+	UnexpectedToken,
+	UnexpectedEOF
+};
+
+pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(Node) {
+	var definitions = Buffer(Node).init(mem.*);
+	var i: u64 = 0;
+	while (i < tokens.len){
+		const name = tokens[i];
+		if (name.tag != TOKEN_IDEN){
+			return ParseError.UnexpectedToken;
+		}
+		i += i;
+		if (i >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+
+	}
+	return definitions;
+}
+
 pub fn main() anyerror!void {
 	const heap = std.heap.page_allocator;
 	const main_buffer = heap.alloc(u8, 0x1000000) catch unreachable;
@@ -144,8 +206,7 @@ pub fn main() anyerror!void {
 	if (std.mem.eql(u8, args[1], "-h")){
 		std.debug.print("Help Menu\n", .{});
 		std.debug.print("   -h : Show this message\n", .{});
-		std.debug.print("   [filename] : evaluate file\n", .{});
-		std.debug.print("   -g : Debugger\n", .{});
+		std.debug.print("   [filename] : compile file\n", .{});
 		return;
 	}
 	const filename = args[1];
