@@ -36,7 +36,7 @@ const Token = struct {
 	tag: TOKEN
 };
 
-pub fn tokenizer(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
+pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 	var idenmap = Map(TOKEN).init(mem.*);
 	idenmap.put("if", TOKEN_IF ) catch unreachable;
 	idenmap.put("for", TOKEN_FOR ) catch unreachable;
@@ -54,7 +54,7 @@ pub fn tokenizer(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) 
 			'\t', '\n', ' ', '\r' => {
 				i += 1;
 				continue;
-			}
+			},
 			TOKEN_EQ, TOKEN_SMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
 				tokens.append(Token{
 					.text = text[i..i+1],
@@ -86,7 +86,8 @@ pub fn tokenizer(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) 
 					switch (next_c){
 						'\t', '\n', ' ', '\r', TOKEN_EQ, TOKEN_SMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
 							break;
-						}
+						},
+						else => {}
 					}
 					k += 1;
 				}
@@ -110,5 +111,44 @@ pub fn tokenizer(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) 
 	return tokens;
 }
 
+pub fn get_contents(mem: *const std.mem.Allocator, filename: []const u8) ![]u8 {
+	var infile = std.fs.cwd().openFile(filename, .{}) catch |err| {
+		std.debug.print("File not found: {s}\n", .{filename});
+		return err;
+	};
+	defer infile.close();
+	const stat = infile.stat() catch |err| {
+		std.debug.print("Errored file stat: {s}\n", .{filename});
+		return err;
+	};
+	const contents = infile.readToEndAlloc(mem.*, stat.size+1) catch |err| {
+		std.debug.print("Error reading file: {s}\n", .{filename});
+		return err;
+	};
+	return contents;
+}
+
 pub fn main() anyerror!void {
+	const heap = std.heap.page_allocator;
+	const main_buffer = heap.alloc(u8, 0x1000000) catch unreachable;
+	const temp_buffer = heap.alloc(u8, 0x10000) catch unreachable;
+	var main_mem_fixed = std.heap.FixedBufferAllocator.init(main_buffer);
+	var temp_mem_fixed = std.heap.FixedBufferAllocator.init(temp_buffer);
+	var main_mem = main_mem_fixed.allocator();
+	var temp_mem = temp_mem_fixed.allocator();
+	const args = try std.process.argsAlloc(main_mem);
+	if (args.len == 1){
+		std.debug.print("-h for help\n", .{});
+		return;
+	}
+	if (std.mem.eql(u8, args[1], "-h")){
+		std.debug.print("Help Menu\n", .{});
+		std.debug.print("   -h : Show this message\n", .{});
+		std.debug.print("   [filename] : evaluate file\n", .{});
+		std.debug.print("   -g : Debugger\n", .{});
+		return;
+	}
+	const filename = args[1];
+	const contents = try get_contents(&main_mem, filename);
+	const tokens = tokenize(&main_mem, contents);
 }
