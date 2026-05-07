@@ -450,12 +450,28 @@ const Expression = union(enum){
 
 const ParseError = error{
 	UnexpectedToken,
-	UnexpectedEOF
+	UnexpectedEOF,
+	ImportError
 };
 
 pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(Node) {
 	var definitions = Buffer(Node).init(mem.*);
 	var i: u64 = 0;
+	while (tokens[i].tag == TOKEN_IMPORT){
+		i += 1;
+		if (tokens[i].tag != TOKEN_STR){
+			return ParseError.UnexpectedToken;
+		}
+		const filename = tokens[i].text;
+		const contents = get_contents(mem, filename) catch {
+			return ParseError.ImportError;
+		};
+		const import_tokens = tokenize(mem, contents);
+		const ast = try parse(mem, import_tokens.items);
+		for (ast.items) |node| {
+			definitions.append(node) catch unreachable;
+		}
+	}
 	while (i < tokens.len){
 		definitions.append(try parse_definition(mem, &i, tokens)) catch unreachable;
 	}
