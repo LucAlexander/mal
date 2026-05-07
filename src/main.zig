@@ -130,15 +130,12 @@ pub fn get_contents(mem: *const std.mem.Allocator, filename: []const u8) ![]u8 {
 	return contents;
 }
 
-const Node = union(enum){
-	variable: struct{
-		name: Token,
-		value: Expression
-	},
-	function: struct{
-		name: Tokem,
-		args: Buffer(Token),
-		value: Block
+const Node = struct{
+	name: Token,
+	args: Buffer(Token),
+	value: union(enum){
+		block: Block,
+		expression: Expression
 	}
 };
 
@@ -157,10 +154,7 @@ const Statement = union(enum){
 	},
 	definition: *Node,
 	asm_statement: *Block,
-	assignment_statement: struct{
-		name: Token,
-		value: Expression
-	}
+	stack_statement: Expression
 };
 
 const Expression = union(enum){
@@ -178,33 +172,7 @@ pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(N
 	var definitions = Buffer(Node).init(mem.*);
 	var i: u64 = 0;
 	while (i < tokens.len){
-		const name = tokens[i];
-		if (name.tag != TOKEN_IDEN){
-			return ParseError.UnexpectedToken;
-		}
-		i += i;
-		if (i >= tokens.len){
-			return ParseError.UnexpectedEOF;
-		}
-		const arg = tokens[i];
-		if (arg.tag == TOKEN_EQ){
-			i += 1;
-			if (i > tokens.len){
-				return ParseError.UnexpectedEOF;
-			}
-			const expression = try parse_expression(mem, &i, tokens);
-			definitions.append(Node{
-				.variable = .{
-					.name = name,
-					.value = expression
-				}
-			}) catch unreachable;
-		}
-		else if (arg.tag == TOKEN_IDEN or arg.tag == TOKEN_OPEN_BLOCK){
-			i -= 1;
-			const definition = try parse_definition(mem, &i, tokens);
-			definitions.append(definition) catch unreachable;
-		}
+		definitions.append(try parse_definition(mem, &i, tokens)) catch unreachable;
 	}
 	return definitions;
 }
@@ -219,7 +187,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 		return ParseError.UnexpectedEOF;
 	}
 	var args = Buffer(Token).init(mem.*)
-	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_OPEN_BLOCK){
+	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_EQ){
 		if (tokens[i.*].tag == TOKEN_IDEN){
 			args.append(tokens[i.*]) catch unreachable;
 			i.* += 1;
@@ -227,23 +195,40 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 		}
 		return ParseError.UnexpectedToken;
 	}
+	i.* += 1;
 	if (i.* >= tokens.len){
 		return ParseError.UnexpectedEOF;
 	}
-	const block = try parse_block(mem, i, tokens);
-	const node = mem.create(Node) catch unreachable;
-	node.* = Node{
-		.function = .{
+	if (tokens[i.*].tag == TOKEN_OPEN_BLOCK){
+		const block = try parse_block(mem, i, tokens);
+		return Node{
 			.name = name,
 			.args = args,
-			.value = block
+			.value = .{
+				.block = block
+			}
+		};
+	}
+	const expr = try parse_expression(mem, i, tokens);
+	return Node{
+		.name = name,
+		.args = args,
+		.value = .{
+			.expression = expr
 		}
-	};
-	return node;
+	}
 }
 
 pub fn parse_block(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Block {
-	//TODO
+	if (tokens[i.*].tag != TOKEN_OPEN_BLOCK){
+		return ParseError.UnexpectedToken;
+	}
+	i.* += 1;
+	var block = Buffer(Statement).init(mem.*);
+	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_CLOSE_BLOCK){
+		block.append(try parse_statement(mem, i, tokens)) catch unreachable;
+	}
+	return block;
 }
 
 pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Statement {
