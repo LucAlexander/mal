@@ -30,7 +30,7 @@ const TOKEN_LE = 6;
 const TOKEN_GE = 7;
 const TOKEN_ASM = 8;
 const TOKEN_ELSE = 9;
-const TOKEN_IMPORT = 10;
+const TOKEN_IMPORT = 10; // TODO file import
 
 const Token = struct {
 	text: []const u8,
@@ -56,6 +56,52 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 	var i: u64 = 0;
 	while (i < text.len){
 		const c = text[i];
+		if (c == '/'){
+			if (i+1 < text.len){
+				if (text[i+1] == '/'){
+					while (i < text.len and text[i] != '\n'){
+						i += 1;
+					}
+					continue;
+				}
+			}
+		}
+		if (c == '='){
+			if (i+1 < text.len){
+				if (text[i+1] == '='){
+					tokens.append(Token{
+						.text = text[i..i+2],
+						.tag = TOKEN_EQL
+					}) catch unreachable;
+					i += 2;
+					continue;
+				}
+			}
+		}
+		if (c == '>'){
+			if (i+1 < text.len){
+				if (text[i+1] == '='){
+					tokens.append(Token{
+						.text = text[i..i+2],
+						.tag = TOKEN_GE
+					}) catch unreachable;
+					i += 2;
+					continue;
+				}
+			}
+		}
+		if (c == '<'){
+			if (i+1 < text.len){
+				if (text[i+1] == '='){
+					tokens.append(Token{
+						.text = text[i..i+2],
+						.tag = TOKEN_LE
+					}) catch unreachable;
+					i += 2;
+					continue;
+				}
+			}
+		}
 		switch (c) {
 			'\t', '\n', ' ', '\r' => {
 				i += 1;
@@ -182,6 +228,10 @@ const Statement = union(enum){
 		consequent: *Block
 	},
 	definition: *Node,
+	assignment: struct{
+		left: Expression,
+		right: Expression
+	},
 	asm_statement: *Block,
 	stack_statement: Expression,
 	
@@ -205,6 +255,10 @@ const Statement = union(enum){
 			},
 			.definition => {
 				self.definition.show();
+			},
+			.assignment => {
+				self.assignment.left.show();
+				self.assignment.right.show();
 			},
 			.asm_statement => {
 				std.debug.print("asm ", .{});
@@ -278,6 +332,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 			i.* += 1;
 			continue;
 		}
+		std.debug.print("Unexpected token: {s}\n", .{tokens[i.*].text});
 		return ParseError.UnexpectedToken;
 	}
 	i.* += 1;
@@ -306,6 +361,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 
 pub fn parse_block(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Block {
 	if (tokens[i.*].tag != TOKEN_OPEN_BLOCK){
+		std.debug.print("Unexpected token: {s}\n", .{tokens[i.*].text});
 		return ParseError.UnexpectedToken;
 	}
 	i.* += 1;
@@ -368,6 +424,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 			return ParseError.UnexpectedEOF;
 		}
 		const range = try parse_expression(mem, i, tokens, TOKEN_OPEN_BLOCK);
+		i.* -= 1;
 		const consequent = mem.create(Block) catch unreachable;
 		consequent.* = try parse_block(mem, i, tokens);
 		return Statement{
@@ -394,13 +451,36 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 	}
 	else {
 		var k = i.*;
+		var not_iden: bool = false;
 		while (k < tokens.len){
+			if (tokens[k].tag != TOKEN_IDEN and tokens[k].tag != TOKEN_EQ){
+				not_iden = true;
+			}
 			if (tokens[k].tag == TOKEN_EQ){
-				const loc = mem.create(Node) catch unreachable;
-				loc.* = try parse_definition(mem, i, tokens);
-				return Statement{
-					.definition = loc
-				};
+				if (not_iden){
+					if (tokens[k+1].tag == TOKEN_OPEN_BLOCK){
+						const loc = mem.create(Node) catch unreachable;
+						loc.* = try parse_definition(mem, i, tokens);
+						return Statement{
+							.definition = loc
+						};
+					}
+					const left = try parse_expression(mem, i, tokens, TOKEN_EQ);
+					const right = try parse_expression(mem, i, tokens, TOKEN_SEMI);
+					return Statement{
+						.assignment = .{
+							.left = left,
+							.right = right
+						}
+					};
+				}
+				else{
+					const loc = mem.create(Node) catch unreachable;
+					loc.* = try parse_definition(mem, i, tokens);
+					return Statement{
+						.definition = loc
+					};
+				}
 			}
 			else if (tokens[k].tag == TOKEN_SEMI){
 				const expr = try parse_expression(mem, i, tokens, TOKEN_SEMI);
@@ -432,7 +512,8 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 			expr.composition.append(loc) catch unreachable;
 		}
 		else{
-			if (tokens[i.*].tag != TOKEN_IDEN){
+			if (!is_intrinsic(tokens[i.*].tag) and tokens[i.*].tag != TOKEN_IDEN){
+				std.debug.print("Unexpected token: {s}\n", .{tokens[i.*].text});
 				return ParseError.UnexpectedToken;
 			}
 			const loc = mem.create(Expression) catch unreachable;
@@ -440,6 +521,7 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 				.atom = tokens[i.*]
 			};
 			expr.composition.append(loc) catch unreachable;
+			i.* += 1;
 		}
 	}
 	if (tokens[i.*].tag != end_token){
@@ -447,6 +529,17 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 	}
 	i.* += 1;
 	return expr;
+}
+
+pub fn is_intrinsic(id: TOKEN) bool {
+	switch (id){
+		TOKEN_REF, TOKEN_PTR, TOKEN_ADD , TOKEN_STR , TOKEN_LE , TOKEN_GE , TOKEN_EQL , TOKEN_SUB , TOKEN_MUL , TOKEN_DIV , TOKEN_MOD , TOKEN_LT , TOKEN_GT  => {
+			return true;
+		},
+		else => {
+			return false;
+		}
+	}
 }
 
 pub fn main() anyerror!void {
