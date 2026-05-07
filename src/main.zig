@@ -394,10 +394,10 @@ const Expression = union(enum){
 			.atom => {
 				switch (self.atom.tag){
 					TOKEN_REF => {
-						out.writer().print("ref ", .{}) catch unreachable;
+						out.writer().print("ptr ", .{}) catch unreachable;
 					},
 					TOKEN_PTR => {
-						out.writer().print("ptr ", .{}) catch unreachable;
+						out.writer().print("ref ", .{}) catch unreachable;
 					},
 					TOKEN_ADD => {
 						out.writer().print("add ", .{}) catch unreachable;
