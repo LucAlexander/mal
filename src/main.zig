@@ -34,7 +34,11 @@ const TOKEN_IMPORT = 10;
 
 const Token = struct {
 	text: []const u8,
-	tag: TOKEN
+	tag: TOKEN,
+
+	pub fn show(self: *Token) void {
+		std.debug.print("{s} ", .{self.text});
+	}
 };
 
 pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
@@ -136,10 +140,35 @@ const Node = struct{
 	value: union(enum){
 		block: Block,
 		expression: Expression
+	},
+	
+	pub fn show(self: *Node) void {
+		self.name.show();
+		for (self.args.items) |arg| {
+			arg.show();
+		}
+		switch(self.value){
+			.block => {
+				self.value.block.show_block();
+			},
+			.expression => {
+				self.value.expression.show();
+				std.debug.print("\n");
+			}
+		}
 	}
 };
 
 const Block = Buffer(Statement);
+
+pub fn show_block(self: *Block) void {
+	std.debug.print("{\n", .{});
+	for (self.items) |line| {
+		line.show();
+		std.debug.print("\n", .{});
+	}
+	std.debug.print("}\n", .{});
+}
 
 const Statement = union(enum){
 	if_statement: struct {
@@ -154,7 +183,38 @@ const Statement = union(enum){
 	},
 	definition: *Node,
 	asm_statement: *Block,
-	stack_statement: Expression
+	stack_statement: Expression,
+	
+	pub fn show(self: *Statement) void {
+		switch (self.*){
+			.if_statement => {
+				std.debug.print("if ", .{});
+				self.if_statement.condition.show();
+				self.if_statement.consequent.show_block();
+				if (self.if_statement.alternate) |alt| {
+					std.debug.print("else ")
+					alt.show();
+				}
+			},
+			.for_statement => {
+				std.debug.print("for ", .{});
+				self.for_statement.variable.show();
+				std.debug.print("in ", .{});
+				self.for_statement.range.show();
+				self.for_statement.consequent.show_block();
+			},
+			.definition => {
+				self.definition.show();
+			},
+			.asm_statement => {
+				std.debug.print("asm ");
+				self.asm_statement.show_block();
+			},
+			.stack_statement => {
+				self.stack_statement.show();
+			}
+		}
+	}
 };
 
 const Expression = union(enum){
@@ -162,6 +222,30 @@ const Expression = union(enum){
 	quote: *Expression,
 	atom: Token,
 	access: *Expression
+
+	pub fn show(self: *Expression) void {
+		switch(self.*) {
+			.composition => {
+				for (self.composition.items) |atom| {
+					atom.show();
+					std.debug.print(" ", .{});
+				}
+			},
+			.quote => {
+				std.debug.print("(", .{});
+				self.quote.show();
+				std.debug.print(")", .{});
+			},
+			.atom => {
+				self.atom.show();
+			},
+			.access => {
+				std.debug.print("[", .{});
+				self.access.show();
+				std.debug.print("]", .{});
+			}
+		}
+	}
 };
 
 const ParseError = error{
