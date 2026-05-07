@@ -160,7 +160,8 @@ const Statement = union(enum){
 const Expression = union(enum){
 	composition: Buffer(*Expression),
 	quote: *Expression,
-	atom: Token
+	atom: Token,
+	access: *Expression
 };
 
 const ParseError = error{
@@ -235,8 +236,38 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 	//TODO
 }
 
-pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Expression {
-	//TODO
+pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token, end_token: TOKEN) ParseError!Expression {
+	var expr = Expr{
+		.composition = Buffer(*Expression).init(mem.*)
+	};
+	while (i.* < tokens.len and tokens[i.*].tag != end_token){
+		if (tokens[i.*].tag == TOKEN_OPEN_QUOTE){
+			i.* += 1;
+			const loc = mem.create(Expression) catch unreachable;
+			loc.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_QUOTE);
+			expr.composition.append(loc) catch unreachable;
+		}
+		else if (tokens[i.*].tag == TOKEN_OPEN_INDEX){
+			i.* += 1;
+			const loc = mem.create(Expression) catch unreachable;
+			loc.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_INDEX);
+			expr.composition.append(loc) catch unreachable;
+		}
+		else{
+			if (tokens[i.*].tag != TOKEN_IDEN){
+				return ParseError.UnexpectedToken;
+			}
+			const loc = mem.create(Expression) catch unreachable;
+			loc.* = Expression{
+				.atom = tokens[i.*];
+			};
+			expr.composition.append() catch unreachable;
+		}
+	}
+	if (tokens[i.*].tag != end_token){
+		return ParseError.UnexpectedEOF;
+	}
+	return expr;
 }
 
 pub fn main() anyerror!void {
