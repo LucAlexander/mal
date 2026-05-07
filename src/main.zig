@@ -322,7 +322,11 @@ const Statement = union(enum){
 				out.writer().print("if unq\n", .{}) catch unreachable;
 			},
 			.for_statement => {
-				out.writer().print("FOR UNIMPLEMENTED\n", .{}) catch unreachable;
+				out.writer().print(":{s} 0;\n(\n", .{self.for_statement.variable.text}) catch unreachable;
+				lower_block(self.for_statement.consequent, out);
+				out.writer().print("{s} 1 add ({s}) set\n) ", .{self.for_statement.variable.text, self.for_statement.variable.text}) catch unreachable;
+				self.for_statement.range.lower(out);
+				out.writer().print("repeat\n", .{}) catch unreachable;
 			},
 			.asm_statement => {
 				for (self.asm_statement.items) |tok| {
