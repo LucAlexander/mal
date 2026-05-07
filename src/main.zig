@@ -144,16 +144,16 @@ const Node = struct{
 	
 	pub fn show(self: *Node) void {
 		self.name.show();
-		for (self.args.items) |arg| {
+		for (self.args.items) |*arg| {
 			arg.show();
 		}
 		switch(self.value){
 			.block => {
-				self.value.block.show_block();
+				show_block(&self.value.block);
 			},
 			.expression => {
 				self.value.expression.show();
-				std.debug.print("\n");
+				std.debug.print("\n", .{});
 			}
 		}
 	}
@@ -162,12 +162,12 @@ const Node = struct{
 const Block = Buffer(Statement);
 
 pub fn show_block(self: *Block) void {
-	std.debug.print("{\n", .{});
-	for (self.items) |line| {
+	std.debug.print("<\n", .{});
+	for (self.items) |*line| {
 		line.show();
 		std.debug.print("\n", .{});
 	}
-	std.debug.print("}\n", .{});
+	std.debug.print(">\n", .{});
 }
 
 const Statement = union(enum){
@@ -190,10 +190,10 @@ const Statement = union(enum){
 			.if_statement => {
 				std.debug.print("if ", .{});
 				self.if_statement.condition.show();
-				self.if_statement.consequent.show_block();
+				show_block(self.if_statement.consequent);
 				if (self.if_statement.alternate) |alt| {
-					std.debug.print("else ")
-					alt.show();
+					std.debug.print("else ", .{});
+					show_block(alt);
 				}
 			},
 			.for_statement => {
@@ -201,14 +201,14 @@ const Statement = union(enum){
 				self.for_statement.variable.show();
 				std.debug.print("in ", .{});
 				self.for_statement.range.show();
-				self.for_statement.consequent.show_block();
+				show_block(self.for_statement.consequent);
 			},
 			.definition => {
 				self.definition.show();
 			},
 			.asm_statement => {
-				std.debug.print("asm ");
-				self.asm_statement.show_block();
+				std.debug.print("asm ", .{});
+				show_block(self.asm_statement);
 			},
 			.stack_statement => {
 				self.stack_statement.show();
@@ -221,7 +221,7 @@ const Expression = union(enum){
 	composition: Buffer(*Expression),
 	quote: *Expression,
 	atom: Token,
-	access: *Expression
+	access: *Expression,
 
 	pub fn show(self: *Expression) void {
 		switch(self.*) {
@@ -456,7 +456,7 @@ pub fn main() anyerror!void {
 	var main_mem_fixed = std.heap.FixedBufferAllocator.init(main_buffer);
 	var temp_mem_fixed = std.heap.FixedBufferAllocator.init(temp_buffer);
 	var main_mem = main_mem_fixed.allocator();
-	var temp_mem = temp_mem_fixed.allocator();
+	_ = temp_mem_fixed.allocator();
 	const args = try std.process.argsAlloc(main_mem);
 	if (args.len == 1){
 		std.debug.print("-h for help\n", .{});
@@ -472,4 +472,9 @@ pub fn main() anyerror!void {
 	const contents = try get_contents(&main_mem, filename);
 	const tokens = tokenize(&main_mem, contents);
 	const ast = try parse(&main_mem, tokens.items);
+	var i: u64 = 0;
+	while (i < ast.items.len){
+		ast.items[i].show();
+		i += 1;
+	}
 }
