@@ -4,7 +4,7 @@ const Map = std.StringHashMap;
 
 const TOKEN = u64;
 const TOKEN_EQ = '=';
-const TOKEN_SMI = ';';
+const TOKEN_SEMI = ';';
 const TOKEN_OPEN_BLOCK = '{';
 const TOKEN_CLOSE_BLOCK = '}';
 const TOKEN_OPEN_QUOTE = '(';
@@ -57,7 +57,7 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 				i += 1;
 				continue;
 			},
-			TOKEN_EQ, TOKEN_SMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
+			TOKEN_EQ, TOKEN_SEMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
 				tokens.append(Token{
 					.text = text[i..i+1],
 					.tag = c
@@ -86,7 +86,7 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 				while (k < text.len){
 					const next_c = text[k];
 					switch (next_c){
-						'\t', '\n', ' ', '\r', TOKEN_EQ, TOKEN_SMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
+						'\t', '\n', ' ', '\r', TOKEN_EQ, TOKEN_SEMI, TOKEN_OPEN_BLOCK, TOKEN_CLOSE_BLOCK, TOKEN_OPEN_QUOTE, TOKEN_CLOSE_QUOTE, TOKEN_REF, TOKEN_PTR, TOKEN_OPEN_INDEX, TOKEN_CLOSE_INDEX, TOKEN_LT, TOKEN_GT, TOKEN_ADD, TOKEN_SUB, TOKEN_MUL, TOKEN_DIV, TOKEN_MOD => {
 							break;
 						},
 						else => {}
@@ -178,7 +178,7 @@ pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(N
 	return definitions;
 }
 
-pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!*Node {
+pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Node {
 	const name = tokens[i.*];
 	i.* += 1;
 	if (name.tag != TOKEN_IDEN){
@@ -187,7 +187,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 	if (i.* >= tokens.len){
 		return ParseError.UnexpectedEOF;
 	}
-	var args = Buffer(Token).init(mem.*)
+	var args = Buffer(Token).init(mem.*);
 	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_EQ){
 		if (tokens[i.*].tag == TOKEN_IDEN){
 			args.append(tokens[i.*]) catch unreachable;
@@ -217,7 +217,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 		.value = .{
 			.expression = expr
 		}
-	}
+	};
 }
 
 pub fn parse_block(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Block {
@@ -243,7 +243,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 		i.* -= 1;
 		const consequent = mem.create(Block) catch unreachable;
 		consequent.* = try parse_block(mem, i, tokens);
-		const alternate: ?*Block = null;
+		var alternate: ?*Block = null;
 		if (i.* >= tokens.len){
 			return ParseError.UnexpectedEOF;
 		}
@@ -253,15 +253,15 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 				return ParseError.UnexpectedEOF;
 			}
 			alternate = mem.create(Block) catch unreachable;
-			alternate.* = try parse_block(me,, i, tokens);
+			alternate.?.* = try parse_block(mem, i, tokens);
 		}
-		return Statement(
+		return Statement{
 			.if_statement = .{
 				.condition = condition,
 				.consequent = consequent,
 				.alternate = alternate
 			}
-		);
+		};
 	}
 	else if (tokens[i.*].tag == TOKEN_FOR){
 		i.* += 1;
@@ -283,10 +283,9 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 		if (i.* >= tokens.len){
 			return ParseError.UnexpectedEOF;
 		}
-		const range = mem.create(Expression) catch unreachable;
-		range.* = try parse_expression(mem, i, token, TOKEN_OPEN_BLOCK);
+		const range = try parse_expression(mem, i, tokens, TOKEN_OPEN_BLOCK);
 		const consequent = mem.create(Block) catch unreachable;
-		consequent.* = parse_block(mem, i, tokens);
+		consequent.* = try parse_block(mem, i, tokens);
 		return Statement{
 			.for_statement = .{
 				.variable = variable,
@@ -297,16 +296,16 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 	}
 	else if (tokens[i.*].tag == TOKEN_ASM){
 		i.* += 1;
-		if (i >= tokens.len){
+		if (i.* >= tokens.len){
 			return ParseError.UnexpectedEOF;
 		}
-		if (tokens[i.*] != TOKEN_OPEN_BLOCK){
+		if (tokens[i.*].tag != TOKEN_OPEN_BLOCK){
 			return ParseError.UnexpectedToken;
 		}
 		const loc = mem.create(Block) catch unreachable;
 		loc.* = try parse_block(mem, i, tokens);
 		return Statement{
-			.asm_statement = loc;
+			.asm_statement = loc
 		};
 	}
 	else {
@@ -320,7 +319,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 				};
 			}
 			else if (tokens[k].tag == TOKEN_SEMI){
-				const expr = try parse_expression(mem, i, TOKEN_SEMI);
+				const expr = try parse_expression(mem, i, tokens, TOKEN_SEMI);
 				return Statement{
 					.stack_statement = expr
 				};
@@ -332,7 +331,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 }
 
 pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token, end_token: TOKEN) ParseError!Expression {
-	var expr = Expr{
+	var expr = Expression{
 		.composition = Buffer(*Expression).init(mem.*)
 	};
 	while (i.* < tokens.len and tokens[i.*].tag != end_token){
@@ -354,9 +353,9 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 			}
 			const loc = mem.create(Expression) catch unreachable;
 			loc.* = Expression{
-				.atom = tokens[i.*];
+				.atom = tokens[i.*]
 			};
-			expr.composition.append() catch unreachable;
+			expr.composition.append(loc) catch unreachable;
 		}
 	}
 	if (tokens[i.*].tag != end_token){
@@ -388,4 +387,5 @@ pub fn main() anyerror!void {
 	const filename = args[1];
 	const contents = try get_contents(&main_mem, filename);
 	const tokens = tokenize(&main_mem, contents);
+	const ast = try parse(&main_mem, tokens.items);
 }
