@@ -243,8 +243,8 @@ pub fn show_block(self: *Block) void {
 
 pub fn lower_block(self: *Block, out: std.fs.File) void {
 	var i: u64 = 0;
-	while (i < self.block.items.len) {
-		self.block.items[i].lower(out);
+	while (i < self.items.len) {
+		self.items[i].lower(out);
 		i += 1;
 	}
 }
@@ -311,7 +311,7 @@ const Statement = union(enum){
 		switch (self.*){
 			.if_statement => {
 				out.writer().print("(", .{}) catch unreachable;
-				lower_block(self.if_statement.consequent out);
+				lower_block(self.if_statement.consequent, out);
 				out.writer().print(")", .{}) catch unreachable;
 				out.writer().print("(", .{}) catch unreachable;
 				if (self.if_statement.alternate) |alt| {
@@ -383,9 +383,9 @@ const Expression = union(enum){
 				}
 			},
 			.quote => {
-				out.writer().print("(", .{});
+				out.writer().print("(", .{}) catch unreachable;
 				self.quote.lower(out);
-				out.writer().print(")\n", .{});
+				out.writer().print(")\n", .{}) catch unreachable;
 			},
 			.atom => {
 				switch (self.atom.tag){
@@ -431,6 +431,9 @@ const Expression = union(enum){
 					TOKEN_GE => {
 						out.writer().print("ge ", .{}) catch unreachable;
 					},
+					else => {
+						unreachable;
+					}
 				}
 			},
 			.access => {
@@ -583,7 +586,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 			return ParseError.UnexpectedToken;
 		}
 		var literal = Buffer(Token).init(mem.*);
-		while (i.* < tokens.len and tokens[i.*].tag != OTKEN_CLOSE_BLOCK){
+		while (i.* < tokens.len and tokens[i.*].tag != TOKEN_CLOSE_BLOCK){
 			literal.append(tokens[i.*]) catch unreachable;
 			i.* += 1;
 		}
@@ -697,19 +700,19 @@ pub fn lower(outfile: []u8, program: Buffer(Node)) void {
 		return;
 	};
 	defer out.close();
-	for (program.items) |node| {
+	var i: u64 = 0;
+	while (i < program.items.len){
+		const node = &program.items[i];
 		node.lower(out);
+		i += 1;
 	}
 }
 
 pub fn main() anyerror!void {
 	const heap = std.heap.page_allocator;
 	const main_buffer = heap.alloc(u8, 0x1000000) catch unreachable;
-	const temp_buffer = heap.alloc(u8, 0x10000) catch unreachable;
 	var main_mem_fixed = std.heap.FixedBufferAllocator.init(main_buffer);
-	var temp_mem_fixed = std.heap.FixedBufferAllocator.init(temp_buffer);
 	var main_mem = main_mem_fixed.allocator();
-	_ = temp_mem_fixed.allocator();
 	const args = try std.process.argsAlloc(main_mem);
 	if (args.len == 1){
 		std.debug.print("-h for help\n", .{});
@@ -718,16 +721,17 @@ pub fn main() anyerror!void {
 	if (std.mem.eql(u8, args[1], "-h")){
 		std.debug.print("Help Menu\n", .{});
 		std.debug.print("   -h : Show this message\n", .{});
-		std.debug.print("   [filename] : compile file\n", .{});
+		std.debug.print("   [infile name] [outfile name]: compile file\n", .{});
+		return;
+	}
+	if (args.len < 3){
+		std.debug.print("-h for help\n", .{});
 		return;
 	}
 	const filename = args[1];
+	const outfile = args[2];
 	const contents = try get_contents(&main_mem, filename);
 	const tokens = tokenize(&main_mem, contents);
 	const ast = try parse(&main_mem, tokens.items);
-	var i: u64 = 0;
-	while (i < ast.items.len){
-		ast.items[i].show();
-		i += 1;
-	}
+	lower(outfile, ast);
 }
