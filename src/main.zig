@@ -210,7 +210,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 			}
 		};
 	}
-	const expr = try parse_expression(mem, i, tokens);
+	const expr = try parse_expression(mem, i, tokens, TOKEN_SEMI);
 	return Node{
 		.name = name,
 		.args = args,
@@ -229,11 +229,106 @@ pub fn parse_block(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) Pars
 	while (i.* < tokens.len and tokens[i.*].tag != TOKEN_CLOSE_BLOCK){
 		block.append(try parse_statement(mem, i, tokens)) catch unreachable;
 	}
+	i.* += 1;
 	return block;
 }
 
 pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) ParseError!Statement {
-	//TODO
+	if (tokens[i.*].tag == TOKEN_IF){
+		i.* += 1;
+		if (i.* >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		const condition = try parse_expression(mem, i, tokens, TOKEN_OPEN_BLOCK);
+		i.* -= 1;
+		const consequent = mem.create(Block) catch unreachable;
+		consequent.* = try parse_block(mem, i, tokens);
+		const alternate: ?*Block = null;
+		if (i.* >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		if (tokens[i.*].tag == TOKEN_ELSE){
+			i.* += 1;
+			if (i.* >= tokens.len){
+				return ParseError.UnexpectedEOF;
+			}
+			alternate = mem.create(Block) catch unreachable;
+			alternate.* = try parse_block(me,, i, tokens);
+		}
+		return Statement(
+			.if_statement = .{
+				.condition = condition,
+				.consequent = consequent,
+				.alternate = alternate
+			}
+		);
+	}
+	else if (tokens[i.*].tag == TOKEN_FOR){
+		i.* += 1;
+		if (i.* >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		if (tokens[i.*].tag != TOKEN_IDEN){
+			return ParseError.UnexpectedToken;
+		}
+		const variable = tokens[i.*];
+		i.* += 1;
+		if (i.* >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		if (tokens[i.*].tag != TOKEN_IN){
+			return ParseError.UnexpectedToken;
+		}
+		i.* += 1;
+		if (i.* >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		const range = mem.create(Expression) catch unreachable;
+		range.* = try parse_expression(mem, i, token, TOKEN_OPEN_BLOCK);
+		const consequent = mem.create(Block) catch unreachable;
+		consequent.* = parse_block(mem, i, tokens);
+		return Statement{
+			.for_statement = .{
+				.variable = variable,
+				.range = range,
+				.consequent = consequent
+			}
+		};
+	}
+	else if (tokens[i.*].tag == TOKEN_ASM){
+		i.* += 1;
+		if (i >= tokens.len){
+			return ParseError.UnexpectedEOF;
+		}
+		if (tokens[i.*] != TOKEN_OPEN_BLOCK){
+			return ParseError.UnexpectedToken;
+		}
+		const loc = mem.create(Block) catch unreachable;
+		loc.* = try parse_block(mem, i, tokens);
+		return Statement{
+			.asm_statement = loc;
+		};
+	}
+	else {
+		var k = i.*;
+		while (k < tokens.len){
+			if (tokens[k].tag == TOKEN_EQ){
+				const loc = mem.create(Node) catch unreachable;
+				loc.* = try parse_definition(mem, i, tokens);
+				return Statement{
+					.definition = loc
+				};
+			}
+			else if (tokens[k].tag == TOKEN_SEMI){
+				const expr = try parse_expression(mem, i, TOKEN_SEMI);
+				return Statement{
+					.stack_statement = expr
+				};
+			}
+			k += 1;
+		}
+		return ParseError.UnexpectedEOF;
+	}
 }
 
 pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token, end_token: TOKEN) ParseError!Expression {
@@ -267,6 +362,7 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 	if (tokens[i.*].tag != end_token){
 		return ParseError.UnexpectedEOF;
 	}
+	i.* += 1;
 	return expr;
 }
 
