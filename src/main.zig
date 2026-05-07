@@ -698,6 +698,19 @@ pub fn is_intrinsic(id: TOKEN) bool {
 	}
 }
 
+pub fn preamble(out: std.fs.File) void {
+	const text =
+		\\:umax 0x3fff;
+		\\:set ptr str;
+		\\:repeat - (action) times --
+			\\:i 0;
+			\\ovr ((i) inc repeat) cat ovr
+			\\(0 (i) set) swp i gt if unq
+		\\;
+	;
+	out.writer().print(text, .{}) catch unreachable;
+}
+
 pub fn lower(outfile: []u8, program: Buffer(Node)) void {
 	var out = std.fs.cwd().createFile(outfile, .{.truncate=true}) catch {
 		std.debug.print("Error creating file: {s}\n", .{outfile});
@@ -705,6 +718,7 @@ pub fn lower(outfile: []u8, program: Buffer(Node)) void {
 	};
 	defer out.close();
 	var i: u64 = 0;
+	preamble(out);
 	while (i < program.items.len){
 		const node = &program.items[i];
 		node.lower(out);
