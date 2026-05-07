@@ -338,9 +338,8 @@ const Statement = union(enum){
 			},
 			.assignment => {
 				self.assignment.right.lower(out);
-				out.writer().print("(\n", .{}) catch unreachable;
 				self.assignment.left.lower(out);
-				out.writer().print(") set\n", .{}) catch unreachable;
+				out.writer().print("str \n", .{}) catch unreachable;
 			},
 			.definition => {
 				self.definition.lower(out);
@@ -442,7 +441,7 @@ const Expression = union(enum){
 			},
 			.access => {
 				self.access.lower(out);
-				out.writer().print("add ref\n", .{}) catch unreachable;
+				out.writer().print("add\n", .{}) catch unreachable;
 			}
 		}
 	}
@@ -728,7 +727,7 @@ pub fn preamble(out: std.fs.File) void {
 		\\:repeat_i 0;
 		\\(repeat_times) set
 		\\(repeat_action) set
-		\\:repeat_helper - --
+		\\:repeat_helper
 			\\(repeat_action unq repeat_i 1 add (repeat_i) set repeat_helper)
 			\\() repeat_times repeat_i gt if unq
 		\\;
