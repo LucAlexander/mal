@@ -193,6 +193,7 @@ const Node = struct{
 		for (self.args.items) |*arg| {
 			arg.show();
 		}
+		std.debug.print("= ", .{});
 		switch(self.value){
 			.block => {
 				show_block(&self.value.block);
@@ -258,6 +259,7 @@ const Statement = union(enum){
 			},
 			.assignment => {
 				self.assignment.left.show();
+				std.debug.print("<- ", .{});
 				self.assignment.right.show();
 			},
 			.asm_statement => {
@@ -502,13 +504,19 @@ pub fn parse_expression(mem: *const std.mem.Allocator, i: *u64, tokens: []Token,
 		if (tokens[i.*].tag == TOKEN_OPEN_QUOTE){
 			i.* += 1;
 			const loc = mem.create(Expression) catch unreachable;
-			loc.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_QUOTE);
+			loc.* = Expression{
+				.quote = mem.create(Expression) catch unreachable
+			};
+			loc.quote.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_QUOTE);
 			expr.composition.append(loc) catch unreachable;
 		}
 		else if (tokens[i.*].tag == TOKEN_OPEN_INDEX){
 			i.* += 1;
 			const loc = mem.create(Expression) catch unreachable;
-			loc.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_INDEX);
+			loc.* = Expression{
+				.access = mem.create(Expression) catch unreachable
+			};
+			loc.access.* = try parse_expression(mem, i, tokens, TOKEN_CLOSE_INDEX);
 			expr.composition.append(loc) catch unreachable;
 		}
 		else{
