@@ -606,6 +606,7 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 			return ParseError.UnexpectedToken;
 		}
 		var literal = Buffer(Token).init(mem.*);
+		i.* += 1;
 		while (i.* < tokens.len and tokens[i.*].tag != TOKEN_CLOSE_BLOCK){
 			literal.append(tokens[i.*]) catch unreachable;
 			i.* += 1;
