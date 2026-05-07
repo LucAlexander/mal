@@ -723,9 +723,16 @@ pub fn preamble(out: std.fs.File) void {
 		\\:umax 0x3fff;
 		\\:set ptr str;
 		\\:repeat
-			\\:i 0;
-			\\ovr ((i) inc repeat) cat ovr
-			\\(0 (i) set) swp i gt if unq
+		\\:repeat_times 0;
+		\\:repeat_action 0;
+		\\:repeat_i 0;
+		\\(repeat_times) set
+		\\(repeat_action) set
+		\\:repeat_helper - --
+			\\(repeat_action unq repeat_i 1 add (repeat_i) set repeat_helper)
+			\\() repeat_times repeat_i gt if unq
+		\\;
+		\\repeat_helper
 		\\;
 	;
 	out.writer().print(text, .{}) catch unreachable;
