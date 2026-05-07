@@ -116,7 +116,7 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 				continue;
 			},
 			'"' => {
-				var k = i;
+				var k = i+1;
 				while (k < text.len){
 					if (text[k] == '"'){
 						k += 1;
@@ -125,7 +125,7 @@ pub fn tokenize(mem: *const std.mem.Allocator, text: []const u8) Buffer(Token) {
 					k += 1;
 				}
 				tokens.append(Token{
-					.text = text[i..k],
+					.text = text[i+1..k-1],
 					.tag = TOKEN_STR
 				}) catch unreachable;
 				i = k;
@@ -463,6 +463,7 @@ pub fn parse(mem: *const std.mem.Allocator, tokens: []Token) ParseError!Buffer(N
 			return ParseError.UnexpectedToken;
 		}
 		const filename = tokens[i].text;
+		i += 1;
 		const contents = get_contents(mem, filename) catch {
 			return ParseError.ImportError;
 		};
@@ -482,6 +483,7 @@ pub fn parse_definition(mem: *const std.mem.Allocator, i: *u64, tokens: []Token)
 	const name = tokens[i.*];
 	i.* += 1;
 	if (name.tag != TOKEN_IDEN){
+		std.debug.print("Unexpected token: {s}\n", .{name.text});
 		return ParseError.UnexpectedToken;
 	}
 	if (i.* >= tokens.len){
@@ -717,9 +719,10 @@ pub fn is_intrinsic(id: TOKEN) bool {
 
 pub fn preamble(out: std.fs.File) void {
 	const text =
+		\\main hlt
 		\\:umax 0x3fff;
 		\\:set ptr str;
-		\\:repeat - (action) times --
+		\\:repeat
 			\\:i 0;
 			\\ovr ((i) inc repeat) cat ovr
 			\\(0 (i) set) swp i gt if unq
