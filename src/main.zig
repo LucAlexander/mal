@@ -204,6 +204,30 @@ const Node = struct{
 			}
 		}
 	}
+
+	pub fn lower(self: *Node, out: std.fs.File) void {
+		out.writer().print(":{s}\n", .{self.name.text}) catch unreachable;
+		for (self.args.items) |arg| {
+			out.writer().print(":{s} 0;\n", .{arg.text}) catch unreachable;
+		}
+		var i: u64 = self.args.items.len;
+		while (i > 0){
+			const arg = self.args.items[i-1];
+			out.writer().print("({s}) set\n", .{arg.text}) catch unreachable;
+			i -= 1;
+		}
+		switch(self.value){
+			.block => {
+				lower_block(&self.value.block, out);
+				out.writer().print(";\n", .{}) catch unreachable;
+			},
+			.expression => {
+				out.writer().print("0;\n", .{}) catch unreachable;
+				self.value.expression.lower(out);
+				out.writer().print("({s}) set\n", .{self.name.text}) catch unreachable;
+			}
+		}
+	}
 };
 
 const Block = Buffer(Statement);
@@ -215,6 +239,14 @@ pub fn show_block(self: *Block) void {
 		std.debug.print("\n", .{});
 	}
 	std.debug.print(">\n", .{});
+}
+
+pub fn lower_block(self: *Block, out: std.fs.File) void {
+	var i: u64 = 0;
+	while (i < self.block.items.len) {
+		self.block.items[i].lower(out);
+		i += 1;
+	}
 }
 
 const Statement = union(enum){
@@ -233,7 +265,7 @@ const Statement = union(enum){
 		left: Expression,
 		right: Expression
 	},
-	asm_statement: *Block,
+	asm_statement: Buffer(Token),
 	stack_statement: Expression,
 	
 	pub fn show(self: *Statement) void {
@@ -264,10 +296,50 @@ const Statement = union(enum){
 			},
 			.asm_statement => {
 				std.debug.print("asm ", .{});
-				show_block(self.asm_statement);
+				for (self.asm_statement.items) |tok| {
+					std.debug.print("{s} ", .{tok.text});
+				}
+				std.debug.print("\n", .{});
 			},
 			.stack_statement => {
 				self.stack_statement.show();
+			}
+		}
+	}
+
+	pub fn lower(self: *Statement, out: std.fs.File) void {
+		switch (self.*){
+			.if_statement => {
+				out.writer().print("(", .{}) catch unreachable;
+				lower_block(self.if_statement.consequent out);
+				out.writer().print(")", .{}) catch unreachable;
+				out.writer().print("(", .{}) catch unreachable;
+				if (self.if_statement.alternate) |alt| {
+					lower_block(alt, out);
+				}
+				out.writer().print(")", .{}) catch unreachable;
+				self.if_statement.condition.lower(out);
+				out.writer().print("if unq\n", .{}) catch unreachable;
+			},
+			.for_statement => {
+				out.writer().print("FOR UNIMPLEMENTED\n", .{}) catch unreachable;
+			},
+			.asm_statement => {
+				for (self.asm_statement.items) |tok| {
+					out.writer().print("{s} ", .{tok.text}) catch unreachable;
+				}
+			},
+			.stack_statement => {
+				self.stack_statement.lower(out);
+			},
+			.assignment => {
+				self.assignment.right.lower(out);
+				out.writer().print("(\n", .{}) catch unreachable;
+				self.assignment.left.lower(out);
+				out.writer().print(") set\n", .{}) catch unreachable;
+			},
+			.definition => {
+				self.definition.lower(out);
 			}
 		}
 	}
@@ -299,6 +371,71 @@ const Expression = union(enum){
 				std.debug.print("[", .{});
 				self.access.show();
 				std.debug.print("]", .{});
+			}
+		}
+	}
+
+	pub fn lower(self: *Expression, out: std.fs.File) void {
+		switch (self.*){
+			.composition => {
+				for (self.composition.items) |sub| {
+					sub.lower(out);
+				}
+			},
+			.quote => {
+				out.writer().print("(", .{});
+				self.quote.lower(out);
+				out.writer().print(")\n", .{});
+			},
+			.atom => {
+				switch (self.atom.tag){
+					TOKEN_REF => {
+						out.writer().print("ref ", .{}) catch unreachable;
+					},
+					TOKEN_PTR => {
+						out.writer().print("ptr ", .{}) catch unreachable;
+					},
+					TOKEN_ADD => {
+						out.writer().print("add ", .{}) catch unreachable;
+					},
+					TOKEN_SUB => {
+						out.writer().print("sub ", .{}) catch unreachable;
+					},
+					TOKEN_MUL => {
+						out.writer().print("mul ", .{}) catch unreachable;
+					},
+					TOKEN_DIV => {
+						out.writer().print("div ", .{}) catch unreachable;
+					},
+					TOKEN_MOD => {
+						out.writer().print("mod ", .{}) catch unreachable;
+					},
+					TOKEN_LT => {
+						out.writer().print("lt ", .{}) catch unreachable;
+					},
+					TOKEN_GT => {
+						out.writer().print("gt ", .{}) catch unreachable;
+					},
+					TOKEN_EQL => {
+						out.writer().print("eq ", .{}) catch unreachable;
+					},
+					TOKEN_STR => {
+						out.writer().print("(\"{s}\") ", .{self.atom.text}) catch unreachable;
+					},
+					TOKEN_IDEN => {
+						out.writer().print("{s} ", .{self.atom.text}) catch unreachable;
+					},
+					TOKEN_LE => {
+						out.writer().print("le ", .{}) catch unreachable;
+					},
+					TOKEN_GE => {
+						out.writer().print("ge ", .{}) catch unreachable;
+					},
+				}
+			},
+			.access => {
+				self.access.lower(out);
+				out.writer().print("add ref\n", .{}) catch unreachable;
 			}
 		}
 	}
@@ -445,10 +582,14 @@ pub fn parse_statement(mem: *const std.mem.Allocator, i: *u64, tokens: []Token) 
 		if (tokens[i.*].tag != TOKEN_OPEN_BLOCK){
 			return ParseError.UnexpectedToken;
 		}
-		const loc = mem.create(Block) catch unreachable;
-		loc.* = try parse_block(mem, i, tokens);
+		var literal = Buffer(Token).init(mem.*);
+		while (i.* < tokens.len and tokens[i.*].tag != OTKEN_CLOSE_BLOCK){
+			literal.append(tokens[i.*]) catch unreachable;
+			i.* += 1;
+		}
+		i.* += 1;
 		return Statement{
-			.asm_statement = loc
+			.asm_statement = literal
 		};
 	}
 	else {
@@ -547,6 +688,17 @@ pub fn is_intrinsic(id: TOKEN) bool {
 		else => {
 			return false;
 		}
+	}
+}
+
+pub fn lower(outfile: []u8, program: Buffer(Node)) void {
+	var out = std.fs.cwd().createFile(outfile, .{.truncate=true}) catch {
+		std.debug.print("Error creating file: {s}\n", .{outfile});
+		return;
+	};
+	defer out.close();
+	for (program.items) |node| {
+		node.lower(out);
 	}
 }
 
