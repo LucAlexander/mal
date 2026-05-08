@@ -725,6 +725,7 @@ pub fn preamble(out: std.fs.File) void {
 		\\:repeat_times 0;
 		\\:repeat_action 0;
 		\\:repeat_i 0;
+		\\0 (repeat_i) set
 		\\(repeat_times) set
 		\\(repeat_action) set
 		\\:repeat_helper
