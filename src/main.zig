@@ -322,7 +322,7 @@ const Statement = union(enum){
 				out.writer().print("if unq\n", .{}) catch unreachable;
 			},
 			.for_statement => {
-				out.writer().print(":{s} 0;\n(\n", .{self.for_statement.variable.text}) catch unreachable;
+				out.writer().print(":{s} 0;0 ({s}) set\n(\n", .{self.for_statement.variable.text, self.for_statement.variable.text}) catch unreachable;
 				lower_block(self.for_statement.consequent, out);
 				out.writer().print("{s} 1 add ({s}) set\n) ", .{self.for_statement.variable.text, self.for_statement.variable.text}) catch unreachable;
 				self.for_statement.range.lower(out);
